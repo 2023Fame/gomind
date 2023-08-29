@@ -1,0 +1,99 @@
+name: Go [Ubuntu,Mac,Win]
+
+on:
+  push:
+    branches:
+      - 'main'
+
+  pull_request:
+    branches:
+      - 'main'
+
+  schedule:
+    - cron: '0 0 */2 * *'
+
+  workflow_dispatch:
+
+concurrency:
+  group: go_cross
+  cancel-in-progress: true
+
+jobs:
+  cross_platform:
+    strategy:
+      max-parallel: 3 #cpu cores /- runner
+      fail-fast: true
+      matrix:
+        go-version: [ '1.19.x', '1.20.x' ] # multiple Go versions #sync.atomic supported only in 1.19
+        arch: [ x64, arm, arm64 ]
+        os: [windows-latest,macos-latest, ubuntu-latest]
+
+        include:
+          - os: ubuntu-latest
+            gocache: /tmp/go/gocache
+          - os: windows-latest
+            gocache: C:/gocache
+          - os: macos-latest
+            gocache: /tmp/go/gocache
+
+#
+    runs-on: ${{ matrix.os }}
+    #concurrency: 8 # no of runners
+#    env:
+#      GOCACHE: $HOME/gocache # $pwd/go/gocache # Has to be absolute path
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go ${{ matrix.go-version }} ${{runner.os}}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          go-version-file: go.mod
+
+#        env:
+#          GOCACHE: ${{matrix.os.gocache}}
+#        run: #cannot have both run and use
+#          echo GOCACHE:${{matrix.os.gocache}}
+          #go env -w GOCACHE= ${{matrix.os.gocache}}
+
+      - name: Cache Go tests
+        uses: actions/cache@v2
+        with:
+          path: |
+            $(go env GOCACHE)
+          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.mod','imageslicer_test.go') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.mod','imageslicer_test.go') }}
+
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test Short
+        run: go test -v -run="^Test" -short ./...
+
+#      - name: Test
+#        run: go test -v -run="^Test" ./... -timeout 6h
+
+
+#      - name: Test Intensive Retry
+#        uses: nick-fields/retry@v2
+#        with:
+#          max_attempts: 3
+#          retry_on: error
+#          timeout_minutes: 120m
+#          #working-directory: ${{ github.workspace }}
+#          command: |
+#            echo 'go test'
+#            echo $pwd
+#
+#            go test -v -run=^Test ./... -timeout 120m
+
+
+#      - name: Test Intensive Cross Platform
+#        run: go test -v -run=^Test ./... -timeout 360m
+
+
+#    https://github.com/marketplace/actions/retry-step
